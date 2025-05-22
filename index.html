@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clinical Trial Carbon Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .input-group { margin-bottom: 1rem; }
+        .input-group label { display: block; margin-bottom: 0.25rem; font-weight: 500; color: #4B5563; } /* gray-600 */
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 0.375rem; /* md */
+            border: 1px solid #D1D5DB; /* gray-300 */
+            box-shadow: inset 0 1px 2px 0 rgba(0,0,0,0.05);
+        }
+        .input-group input:focus, .input-group select:focus {
+            outline: 2px solid transparent;
+            outline-offset: 2px;
+            border-color: #3B82F6; /* blue-500 */
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+        .dynamic-section-block { /* Generic class for country, intervention etc. blocks */
+            border: 1px solid #E5E7EB; /* gray-200 */
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem; /* lg */
+            background-color: #F9FAFB; /* gray-50 */
+            box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06);
+        }
+        .nested-group {
+            margin-left: 1rem;
+            padding-left: 1rem;
+            border-left: 2px solid #D1D5DB; /* gray-300 */
+            margin-top: 1rem;
+            padding-top: 1rem;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.375rem; /* md */
+            font-weight: 600; /* semibold */
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+        }
+        .btn-primary { background-color: #3B82F6; color: white; }
+        .btn-primary:hover { background-color: #2563EB; transform: translateY(-1px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }
+        .btn-secondary { background-color: #6B7280; color: white; }
+        .btn-secondary:hover { background-color: #4B5563; transform: translateY(-1px); }
+        .btn-danger { background-color: #EF4444; color: white; }
+        .btn-danger:hover { background-color: #DC2626; transform: translateY(-1px); }
+        .btn-sm { padding: 0.5rem 1rem; font-weight: 500; }
+        
+        .result-card { background-color: white; padding: 1.5rem; border-radius: 0.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06); }
+        .result-card h3 { font-size: 1.25rem; font-weight: 600; color: #1F2937; margin-bottom: 1rem; border-bottom: 1px solid #E5E7EB; padding-bottom: 0.5rem; }
+        .result-item { margin-bottom: 0.75rem; display: flex; justify-content: space-between; }
+        .result-item strong { color: #374151; }
+        .result-item span { color: #4B5563; }
+        .debug-log { font-size: 0.875rem; color: #6B7280; background-color: #F3F4F6; padding: 0.5rem; border-radius: 0.25rem; margin-top: 0.5rem; white-space: pre-wrap; }
+        .loading-indicator { display: none; margin: 2rem auto; text-align: center; font-size: 1.125rem; color: #3B82F6; }
+        .hidden { display: none !important; }
+        #emissionsChartContainer { background-color: white; padding: 1.5rem; border-radius: 0.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06); }
+        .section-title { font-size: 1.5rem; font-weight: 600; color: #374151; margin-bottom: 1rem; border-bottom: 1px solid #D1D5DB; padding-bottom: 0.5rem;}
+    </style>
+</head>
+<body class="bg-gray-200 p-4 md:p-8 min-h-screen flex flex-col items-center">
+    <div id="formView" class="container mx-auto max-w-3xl bg-white p-6 md:p-10 rounded-xl shadow-2xl w-full">
+        <h1 class="text-3xl font-bold mb-8 text-center text-gray-800">Clinical Trial Carbon Calculator</h1>
+        <form id="calculatorForm" class="space-y-10">
+            <div>
+                <h2 class="section-title">General Information</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="input-group"><label for="currencyCode">Currency Code:</label><input type="text" id="currencyCode" name="currencyCode" class="form-input"></div>
+                    <div class="input-group"><label for="trialName">Trial Name:</label><input type="text" id="trialName" name="trialName" class="form-input"></div>
+                </div>
+                <div class="input-group"><label for="individualName">Individual Name:</label><input type="text" id="individualName" name="individualName" class="form-input"></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="input-group"><label for="startDate">Start Date:</label><input type="datetime-local" id="startDate" name="startDate" class="form-input"></div>
+                    <div class="input-group"><label for="endDate">End Date:</label><input type="datetime-local" id="endDate" name="endDate" class="form-input"></div>
+                </div>
+            </div>
+
+            <div>
+                <h2 class="section-title">Country Details</h2>
+                <div id="countryDetailsContainerInner" class="space-y-6"></div>
+                <button type="button" id="addCountryDetail" class="btn btn-secondary mt-4 w-full md:w-auto">Add Country Detail</button>
+            </div>
+
+            <div>
+                <h2 class="section-title">Interventions</h2>
+                <div id="interventionsContainerInner" class="space-y-6"></div>
+                <button type="button" id="addIntervention" class="btn btn-secondary mt-4 w-full md:w-auto">Add Intervention</button>
+            </div>
+
+            <div>
+                <h2 class="section-title">Test Lab Kits</h2>
+                <div id="testLabKitsContainerInner" class="space-y-6"></div>
+                <button type="button" id="addTestLabKit" class="btn btn-secondary mt-4 w-full md:w-auto">Add Test Lab Kit</button>
+            </div>
+
+            <div>
+                <h2 class="section-title">Other Participant Devices</h2>
+                <div id="otherParticipantsContainerInner" class="space-y-6"></div>
+                <button type="button" id="addOtherParticipant" class="btn btn-secondary mt-4 w-full md:w-auto">Add Other Participant Device</button>
+            </div>
+            
+            <div id="formLoadingIndicator" class="loading-indicator">Please wait...</div>
+            <div class="mt-10 pt-6 border-t border-gray-200">
+                 <button type="submit" id="submitFormButton" class="btn btn-primary w-full text-lg">Calculate Results</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="resultsView" class="container mx-auto max-w-4xl p-6 md:p-10 rounded-xl shadow-2xl w-full hidden mt-8">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Calculation Results</h1>
+            <button id="backToFormButton" class="btn btn-secondary">Back to Form</button>
+        </div>
+        <div id="emissionsChartContainer" class="mb-6">
+            <h3 class="text-xl font-semibold text-gray-700 mb-4 text-center">Emissions by Section (kgCO2e)</h3>
+            <canvas id="emissionsChart"></canvas>
+        </div>
+        <div id="resultsContent" class="space-y-6"></div>
+        <div id="resultsLoadingIndicator" class="loading-indicator">Calculating...</div>
+        <pre id="rawApiResponse" class="mt-8 bg-gray-800 text-white p-4 rounded-md text-xs overflow-x-auto hidden"></pre>
+        <button id="toggleRawJson" class="btn btn-sm btn-secondary mt-4">Show Raw JSON</button>
+    </div>
+
+    <script>
+        // DOM Elements
+        const formView = document.getElementById('formView');
+        const resultsView = document.getElementById('resultsView');
+        const calculatorForm = document.getElementById('calculatorForm');
+        // --- Container Inners ---
+        const countryDetailsContainerInner = document.getElementById('countryDetailsContainerInner');
+        const interventionsContainerInner = document.getElementById('interventionsContainerInner');
+        const testLabKitsContainerInner = document.getElementById('testLabKitsContainerInner');
+        const otherParticipantsContainerInner = document.getElementById('otherParticipantsContainerInner');
+        // --- Add Buttons ---
+        const addCountryDetailButton = document.getElementById('addCountryDetail');
+        const addInterventionButton = document.getElementById('addIntervention');
+        const addTestLabKitButton = document.getElementById('addTestLabKit');
+        const addOtherParticipantButton = document.getElementById('addOtherParticipant');
+        // --- Other UI Elements ---
+        const resultsContent = document.getElementById('resultsContent');
+        const resultsLoadingIndicator = document.getElementById('resultsLoadingIndicator');
+        const backToFormButton = document.getElementById('backToFormButton');
+        const submitFormButton = document.getElementById('submitFormButton');
+        const rawApiResponseElement = document.getElementById('rawApiResponse');
+        const toggleRawJsonButton = document.getElementById('toggleRawJson');
+        const emissionsChartCanvas = document.getElementById('emissionsChart');
+
+        const API_ENDPOINT = 'https://clinicaltrialcarbon.org/api/Calculator/CalculateResults';
+        const LOCAL_STORAGE_KEY = 'clinicalTrialFormData';
+
+        // Counters for dynamic blocks
+        let countryDetailCount = 0;
+        let interventionCount = 0;
+        let testLabKitCount = 0;
+        let otherParticipantCount = 0;
+        let emissionsChartInstance = null;
+
+        // --- Helper Functions ---
+        function showView(viewToShow) {
+            formView.classList.add('hidden');
+            resultsView.classList.add('hidden');
+            if (viewToShow === 'form') formView.classList.remove('hidden');
+            else if (viewToShow === 'results') resultsView.classList.remove('hidden');
+        }
+        
+        function createResultItem(label, value, unit = '') {
+            const valStr = (value === null || typeof value === 'undefined' || value === "") ? 'N/A' : `${value} ${unit}`.trim();
+            return `<div class="result-item"><strong>${label}:</strong> <span>${valStr}</span></div>`;
+        }
+
+        function createDebugLogs(logs) {
+            if (!logs || logs.length === 0) return '';
+            return `<div class="debug-log"><strong>Debug Logs:</strong><ul class="list-disc list-inside ml-4">${logs.map(log => `<li>${log}</li>`).join('')}</ul></div>`;
+        }
+
+        function createRemoveButton(blockId, itemType) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-danger btn-sm remove-item-button';
+            button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>Remove`;
+            button.addEventListener('click', () => {
+                document.getElementById(blockId)?.remove();
+            });
+            return button;
+        }
+        
+        // --- Dynamic Block Creation Functions ---
+        function addCountryDetailBlock(data = {}) {
+            countryDetailCount++;
+            const blockId = `countryDetail-${countryDetailCount}`;
+            const block = document.createElement('div');
+            block.className = 'dynamic-section-block';
+            block.id = blockId;
+            block.innerHTML = `
+                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-medium text-gray-700">Country Detail #${countryDetailCount}</h3></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="input-group"><label for="${blockId}-countryCode">Country Code:</label><input type="text" id="${blockId}-countryCode" value="${data.countryCode || ''}"></div>
+                    <div class="input-group"><label for="${blockId}-numberOfSubjects">Number of Subjects:</label><input type="number" id="${blockId}-numberOfSubjects" value="${data.numberOfSubjects || 0}" min="0"></div>
+                </div>
+                <div class="nested-group mt-4">
+                    <h4 class="text-md font-semibold mb-2 text-gray-600">Site Visit</h4>
+                    <div class="input-group"><label for="${blockId}-numberOfSubjectSiteVisits"># Site Visits:</label><input type="number" id="${blockId}-numberOfSubjectSiteVisits" value="${data.siteVisit?.numberOfSubjectSiteVisits || 0}" min="0"></div>
+                    <div class="input-group"><label for="${blockId}-durationOfSiteVisit">Duration (hours):</label><input type="number" id="${blockId}-durationOfSiteVisit" value="${data.siteVisit?.durationOfVisit || 0}" min="0"></div>
+                </div>
+                <div class="nested-group mt-4">
+                    <h4 class="text-md font-semibold mb-2 text-gray-600">Remote/Virtual Visit</h4>
+                    <div class="input-group"><label for="${blockId}-numberOfRemoveVirtualVists"># Remote Visits:</label><input type="number" id="${blockId}-numberOfRemoveVirtualVists" value="${data.remoteVirtualVisit?.numberOfRemoveVirtualVists || 0}" min="0"></div>
+                    <div class="input-group"><label for="${blockId}-durationOfRemoteVisit">Duration (hours):</label><input type="number" id="${blockId}-durationOfRemoteVisit" value="${data.remoteVirtualVisit?.durationOfVisit || 0}" min="0"></div>
+                </div>`;
+            block.querySelector('h3').insertAdjacentElement('afterend', createRemoveButton(blockId, 'country'));
+            countryDetailsContainerInner.appendChild(block);
+        }
+
+        function addInterventionBlock(data = {}) {
+            interventionCount++;
+            const blockId = `intervention-${interventionCount}`;
+            const block = document.createElement('div');
+            block.className = 'dynamic-section-block';
+            block.id = blockId;
+            block.innerHTML = `
+                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-medium text-gray-700">Intervention #${interventionCount}</h3></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="input-group"><label for="${blockId}-productName">Product Name:</label><input type="text" id="${blockId}-productName" value="${data.productName || ''}"></div>
+                    <div class="input-group"><label for="${blockId}-productType">Product Type (number):</label><input type="number" id="${blockId}-productType" value="${data.productType || 1}"></div>
+                    <div class="input-group"><label for="${blockId}-quantityType">Quantity Type (number):</label><input type="number" id="${blockId}-quantityType" value="${data.quantityType || 1}"></div>
+                    <div class="input-group"><label for="${blockId}-quantity">Quantity:</label><input type="number" id="${blockId}-quantity" value="${data.quantity || 0}" min="0"></div>
+                    <div class="input-group"><label for="${blockId}-oversupplyAmount">Oversupply Amount:</label><input type="number" id="${blockId}-oversupplyAmount" value="${data.oversupplyAmount || ''}" placeholder="Optional"></div>
+                    <div class="input-group"><label for="${blockId}-supplyCountry">Supply Country:</label><input type="text" id="${blockId}-supplyCountry" value="${data.supplyCountry || ''}" placeholder="Optional"></div>
+                    <div class="input-group"><label for="${blockId}-kitQuantityType">Kit Quantity Type:</label><input type="number" id="${blockId}-kitQuantityType" value="${data.kitQuantityType || ''}" placeholder="Optional"></div>
+                    <div class="input-group"><label for="${blockId}-kitQuantity">Kit Quantity:</label><input type="number" id="${blockId}-kitQuantity" value="${data.kitQuantity || ''}" placeholder="Optional"></div>
+                    <div class="input-group"><label for="${blockId}-kitOverSupplyAmount">Kit Oversupply Amount:</label><input type="number" id="${blockId}-kitOverSupplyAmount" value="${data.kitOverSupplyAmount || ''}" placeholder="Optional"></div>
+                    <div class="input-group"><label for="${blockId}-kitWeight">Kit Weight (kg):</label><input type="number" id="${blockId}-kitWeight" value="${data.kitWeight || ''}" step="any" placeholder="Optional"></div>
+                </div>`;
+            block.querySelector('h3').insertAdjacentElement('afterend', createRemoveButton(blockId, 'intervention'));
+            interventionsContainerInner.appendChild(block);
+        }
+
+        function addTestLabKitBlock(data = {}) {
+            testLabKitCount++;
+            const blockId = `testLabKit-${testLabKitCount}`;
+            const block = document.createElement('div');
+            block.className = 'dynamic-section-block';
+            block.id = blockId;
+            block.innerHTML = `
+                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-medium text-gray-700">Test Lab Kit #${testLabKitCount}</h3></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="input-group"><label for="${blockId}-productName">Product Name:</label><input type="text" id="${blockId}-productName" value="${data.productName || ''}"></div>
+                    <div class="input-group"><label for="${blockId}-supplyCountry">Supply Country:</label><input type="text" id="${blockId}-supplyCountry" value="${data.supplyCountry || ''}" placeholder="Optional"></div>
+                    <div class="input-group"><label for="${blockId}-kitQuantityType">Kit Quantity Type:</label><input type="number" id="${blockId}-kitQuantityType" value="${data.kitQuantityType || 1}"></div>
+                    <div class="input-group"><label for="${blockId}-kitQuantity">Kit Quantity:</label><input type="number" id="${blockId}-kitQuantity" value="${data.kitQuantity || 0}" min="0"></div>
+                    <div class="input-group"><label for="${blockId}-kitOverSupplyAmount">Kit Oversupply Amount:</label><input type="number" id="${blockId}-kitOverSupplyAmount" value="${data.kitOverSupplyAmount || ''}" placeholder="Optional"></div>
+                    <div class="input-group"><label for="${blockId}-kitWeight">Kit Weight (kg):</label><input type="number" id="${blockId}-kitWeight" value="${data.kitWeight || 0}" step="any" min="0"></div>
+                </div>`;
+            block.querySelector('h3').insertAdjacentElement('afterend', createRemoveButton(blockId, 'testLabKit'));
+            testLabKitsContainerInner.appendChild(block);
+        }
+
+        function addOtherParticipantBlock(data = {}) {
+            otherParticipantCount++;
+            const blockId = `otherParticipant-${otherParticipantCount}`;
+            const block = document.createElement('div');
+            block.className = 'dynamic-section-block';
+            block.id = blockId;
+            block.innerHTML = `
+                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-medium text-gray-700">Other Participant Device #${otherParticipantCount}</h3></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="input-group"><label for="${blockId}-productName">Product Name:</label><input type="text" id="${blockId}-productName" value="${data.productName || ''}"></div>
+                    <div class="input-group"><label for="${blockId}-supplyCountry">Supply Country:</label><input type="text" id="${blockId}-supplyCountry" value="${data.supplyCountry || ''}" placeholder="Optional"></div>
+                    <div class="input-group"><label for="${blockId}-productType">Product Type (e.g. Device_smartphone):</label><input type="text" id="${blockId}-productType" value="${data.productType || 'Device_(smartphone)'}"></div>
+                    <div class="input-group"><label for="${blockId}-itemWeight">Item Weight (kg):</label><input type="number" id="${blockId}-itemWeight" value="${data.itemWeight || 0}" step="any" min="0"></div>
+                    <div class="input-group"><label for="${blockId}-quantityType">Quantity Type:</label><input type="number" id="${blockId}-quantityType" value="${data.quantityType || 1}"></div>
+                    <div class="input-group"><label for="${blockId}-quantity">Quantity:</label><input type="number" id="${blockId}-quantity" value="${data.quantity || 0}" min="0"></div>
+                    <div class="input-group"><label for="${blockId}-overSupplyAmount">Oversupply Amount:</label><input type="number" id="${blockId}-overSupplyAmount" value="${data.overSupplyAmount || ''}" placeholder="Optional"></div>
+                    <div class="input-group"><label for="${blockId}-hoursUsagePerDevicePerParticipant">Hours Usage/Device/Participant:</label><input type="number" id="${blockId}-hoursUsagePerDevicePerParticipant" value="${data.hoursUsagePerDevicePerParticipant || 0}" min="0"></div>
+                </div>`;
+            block.querySelector('h3').insertAdjacentElement('afterend', createRemoveButton(blockId, 'otherParticipant'));
+            otherParticipantsContainerInner.appendChild(block);
+        }
+        
+        // --- Payload Building & Local Storage ---
+        function buildJsonPayload() {
+            const payload = {
+                currencyCode: document.getElementById('currencyCode').value,
+                trialName: document.getElementById('trialName').value,
+                individualName: document.getElementById('individualName').value,
+                startDate: document.getElementById('startDate').value ? `${document.getElementById('startDate').value}:00.000Z` : null,
+                endDate: document.getElementById('endDate').value ? `${document.getElementById('endDate').value}:00.000Z` : null,
+                countryDetails: [], interventions: [], testLabKit: [], otherParticipants: []
+            };
+
+            document.querySelectorAll('#countryDetailsContainerInner .dynamic-section-block').forEach(b => {
+                payload.countryDetails.push({
+                    countryCode: b.querySelector(`#${b.id}-countryCode`).value,
+                    numberOfSubjects: parseInt(b.querySelector(`#${b.id}-numberOfSubjects`).value) || 0,
+                    siteVisit: {
+                        numberOfSubjectSiteVisits: parseInt(b.querySelector(`#${b.id}-numberOfSubjectSiteVisits`).value) || 0,
+                        durationOfVisit: parseInt(b.querySelector(`#${b.id}-durationOfSiteVisit`).value) || 0
+                    },
+                    remoteVirtualVisit: {
+                        numberOfRemoveVirtualVists: parseInt(b.querySelector(`#${b.id}-numberOfRemoveVirtualVists`).value) || 0,
+                        durationOfVisit: parseInt(b.querySelector(`#${b.id}-durationOfRemoteVisit`).value) || 0
+                    }
+                });
+            });
+            document.querySelectorAll('#interventionsContainerInner .dynamic-section-block').forEach(b => {
+                payload.interventions.push({
+                    id: crypto.randomUUID(), // Generate client-side ID
+                    productName: b.querySelector(`#${b.id}-productName`).value,
+                    productType: parseInt(b.querySelector(`#${b.id}-productType`).value) || null,
+                    quantityType: parseInt(b.querySelector(`#${b.id}-quantityType`).value) || null,
+                    quantity: parseInt(b.querySelector(`#${b.id}-quantity`).value) || null,
+                    oversupplyAmount: b.querySelector(`#${b.id}-oversupplyAmount`).value ? parseInt(b.querySelector(`#${b.id}-oversupplyAmount`).value) : null,
+                    supplyCountry: b.querySelector(`#${b.id}-supplyCountry`).value || null,
+                    kitQuantityType: b.querySelector(`#${b.id}-kitQuantityType`).value ? parseInt(b.querySelector(`#${b.id}-kitQuantityType`).value) : null,
+                    kitQuantity: b.querySelector(`#${b.id}-kitQuantity`).value ? parseInt(b.querySelector(`#${b.id}-kitQuantity`).value) : null,
+                    kitOverSupplyAmount: b.querySelector(`#${b.id}-kitOverSupplyAmount`).value ? parseInt(b.querySelector(`#${b.id}-kitOverSupplyAmount`).value) : null,
+                    kitWeight: b.querySelector(`#${b.id}-kitWeight`).value ? parseFloat(b.querySelector(`#${b.id}-kitWeight`).value) : null,
+                });
+            });
+            document.querySelectorAll('#testLabKitsContainerInner .dynamic-section-block').forEach(b => {
+                payload.testLabKit.push({
+                    id: crypto.randomUUID(),
+                    productName: b.querySelector(`#${b.id}-productName`).value,
+                    supplyCountry: b.querySelector(`#${b.id}-supplyCountry`).value || null,
+                    kitQuantityType: parseInt(b.querySelector(`#${b.id}-kitQuantityType`).value) || null,
+                    kitQuantity: parseInt(b.querySelector(`#${b.id}-kitQuantity`).value) || null,
+                    kitOverSupplyAmount: b.querySelector(`#${b.id}-kitOverSupplyAmount`).value ? parseInt(b.querySelector(`#${b.id}-kitOverSupplyAmount`).value) : null,
+                    kitWeight: parseFloat(b.querySelector(`#${b.id}-kitWeight`).value) || null,
+                });
+            });
+            document.querySelectorAll('#otherParticipantsContainerInner .dynamic-section-block').forEach(b => {
+                payload.otherParticipants.push({
+                    id: crypto.randomUUID(),
+                    productName: b.querySelector(`#${b.id}-productName`).value,
+                    supplyCountry: b.querySelector(`#${b.id}-supplyCountry`).value || null,
+                    productType: b.querySelector(`#${b.id}-productType`).value,
+                    itemWeight: parseFloat(b.querySelector(`#${b.id}-itemWeight`).value) || null,
+                    quantityType: parseInt(b.querySelector(`#${b.id}-quantityType`).value) || null,
+                    quantity: parseInt(b.querySelector(`#${b.id}-quantity`).value) || null,
+                    overSupplyAmount: b.querySelector(`#${b.id}-overSupplyAmount`).value ? parseInt(b.querySelector(`#${b.id}-overSupplyAmount`).value) : null,
+                    hoursUsagePerDevicePerParticipant: parseInt(b.querySelector(`#${b.id}-hoursUsagePerDevicePerParticipant`).value) || null,
+                });
+            });
+            return payload;
+        }
+
+        function saveFormToLocalStorage() {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(buildJsonPayload()));
+        }
+
+        function loadFormFromLocalStorage() {
+            const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+            const data = savedData ? JSON.parse(savedData) : {};
+
+            // Default values from your new payload example
+            const defaultPayload = {
+                currencyCode: "EUR", trialName: "Test", individualName: "Some Test",
+                startDate: "2025-05-19T23:00:00.000Z", endDate: "2025-05-21T23:00:00.000Z",
+                countryDetails: [{ countryCode: "AL", numberOfSubjects: 2, siteVisit: { numberOfSubjectSiteVisits: 2, durationOfVisit: 2 }, remoteVirtualVisit: { numberOfRemoveVirtualVists: 2, durationOfVisit: 2 } }],
+                interventions: [{ productType: 1, productName: "Test", quantityType: 2, quantity: 2, oversupplyAmount: null, supplyCountry: null, kitQuantityType: null, kitQuantity: null, kitOverSupplyAmount: null, kitWeight: null }],
+                testLabKit: [{ productName: "Test3", supplyCountry: null, kitQuantityType: 1, kitQuantity: 123, kitOverSupplyAmount: null, kitWeight: 123 }],
+                otherParticipants: [{ productName: "Test", supplyCountry: null, productType: "Device_(smartphone)", itemWeight: 0.182, quantityType: 1, quantity: 1, overSupplyAmount: null, hoursUsagePerDevicePerParticipant: 2 }]
+            };
+            
+            document.getElementById('currencyCode').value = data.currencyCode || defaultPayload.currencyCode;
+            document.getElementById('trialName').value = data.trialName || defaultPayload.trialName;
+            document.getElementById('individualName').value = data.individualName || defaultPayload.individualName;
+            document.getElementById('startDate').value = (data.startDate || defaultPayload.startDate)?.slice(0, 16);
+            document.getElementById('endDate').value = (data.endDate || defaultPayload.endDate)?.slice(0, 16);
+
+            // Clear and populate dynamic sections
+            [countryDetailsContainerInner, interventionsContainerInner, testLabKitsContainerInner, otherParticipantsContainerInner].forEach(c => c.innerHTML = '');
+            countryDetailCount = interventionCount = testLabKitCount = otherParticipantCount = 0;
+
+            (data.countryDetails || defaultPayload.countryDetails).forEach(addCountryDetailBlock);
+            (data.interventions || defaultPayload.interventions).forEach(addInterventionBlock);
+            (data.testLabKit || defaultPayload.testLabKit).forEach(addTestLabKitBlock);
+            (data.otherParticipants || defaultPayload.otherParticipants).forEach(addOtherParticipantBlock);
+        }
+
+        // --- API Call & Result Display ---
+        async function handleFormSubmit(event) {
+            event.preventDefault();
+            submitFormButton.disabled = true;
+            submitFormButton.textContent = 'Calculating...';
+            resultsLoadingIndicator.style.display = 'block';
+            resultsContent.innerHTML = ''; 
+            rawApiResponseElement.classList.add('hidden'); 
+            if (emissionsChartInstance) { emissionsChartInstance.destroy(); emissionsChartInstance = null; }
+            emissionsChartCanvas.getContext('2d').clearRect(0,0,emissionsChartCanvas.width, emissionsChartCanvas.height);
+
+            const payload = buildJsonPayload();
+            saveFormToLocalStorage(); 
+            console.log('Sending payload:', JSON.stringify(payload, null, 2));
+
+            try {
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+                }
+                const result = await response.json();
+                displayPrettyResults(result);
+            } catch (error) {
+                console.error('Error sending API request:', error);
+                resultsContent.innerHTML = `<div class="result-card text-red-600"><h3 class="text-red-700">Error</h3><p>${error.message}</p></div>`;
+                showView('results'); 
+            } finally {
+                resultsLoadingIndicator.style.display = 'none';
+                submitFormButton.disabled = false;
+                submitFormButton.textContent = 'Calculate Results';
+            }
+        }
+
+        function displayPrettyResults(data) {
+            resultsContent.innerHTML = ''; // Clear previous textual results
+
+            // Overall Totals (assuming structure remains similar)
+            const totalsCard = document.createElement('div');
+            totalsCard.className = 'result-card';
+            totalsCard.innerHTML = `<h3>Overall Emissions</h3>
+                ${createResultItem('Total kgCO2e', data.totalKgCO2e, 'kgCO2e')}
+                ${createResultItem('Total kgCO2e (Scope 3)', data.totalKgCO2eSp3, 'kgCO2e')}
+                ${createResultItem('Participant kgCO2e', data.participantKgCO2e, 'kgCO2e/participant')}
+                ${createResultItem('Participant kgCO2e (Scope 3)', data.participantKgCO2eSp3, 'kgCO2e/participant')}`;
+            resultsContent.appendChild(totalsCard);
+
+            // Displaying new sections - adapt based on actual API response structure for these
+            // For now, using a generic display if the keys exist in the response
+            const displayGenericSection = (sectionData, title) => {
+                if (sectionData && Array.isArray(sectionData) && sectionData.length > 0) {
+                    const card = document.createElement('div');
+                    card.className = 'result-card';
+                    let html = `<h3>${title}</h3>`;
+                    sectionData.forEach((item, index) => {
+                        html += `<div class="border-t pt-3 mt-3 first:border-t-0 first:pt-0 first:mt-0"><h4>Item #${index + 1}</h4>`;
+                        for (const key in item) {
+                            if (typeof item[key] !== 'object' || item[key] === null) { // Simple key-value
+                                html += createResultItem(key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()), item[key]);
+                            } else if (typeof item[key] === 'object' && item[key] !== null) { // Nested object
+                                html += `<div class="ml-4 mt-2"><h5>${key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:</h5>`;
+                                for (const subKey in item[key]) {
+                                     html += createResultItem(subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()), item[key][subKey], '', 'ml-4');
+                                }
+                                html += `</div>`;
+                            }
+                        }
+                        html += `</div>`;
+                    });
+                    card.innerHTML = html;
+                    resultsContent.appendChild(card);
+                } else if (sectionData) { // If sectionData exists but is not an array or is empty
+                     const card = document.createElement('div');
+                     card.className = 'result-card';
+                     card.innerHTML = `<h3>${title}</h3><p>No data available or section details not an array.</p>`;
+                     resultsContent.appendChild(card);
+                }
+            };
+            
+            // Assuming API response might have keys like 'interventions', 'testLabKit', 'otherParticipants' mirroring the request.
+            // The example response had 'interventionResults' (empty array), 'testLabKit' (array), 'otherParticipants' (array)
+            displayGenericSection(data.interventionResults || data.interventions, "Interventions Results");
+            displayGenericSection(data.testLabKit, "Test Lab Kit Results"); // Your example response had 'testLabKit' as an array
+            displayGenericSection(data.otherParticipants, "Other Participant Devices Results"); // Your example response had 'otherParticipants' as an array
+
+
+            // Participant Travel Result (existing)
+            if (data.participantTravelResult) { /* ... same as before ... */ }
+            // Country Emission Breakdown (existing)
+            if (data.countryEmissionBreakdown && data.countryEmissionBreakdown.length > 0) { /* ... same as before ... */ }
+            // Section Emission Breakdown (Details - existing)
+            if (data.sectionEmissionBreakdown && data.sectionEmissionBreakdown.length > 0) { /* ... same as before ... */ }
+            // Samples (existing)
+            if (data.samples) { /* ... same as before ... */ }
+
+
+            // Chart (existing)
+            if (data.sectionEmissionBreakdown && data.sectionEmissionBreakdown.length > 0) {
+                const chartLabels = data.sectionEmissionBreakdown.map(s => s.sectionName);
+                const chartDataValues = data.sectionEmissionBreakdown.map(s => s.totalKgCO2e);
+                if (emissionsChartInstance) emissionsChartInstance.destroy();
+                emissionsChartInstance = new Chart(emissionsChartCanvas, {
+                    type: 'bar', data: { labels: chartLabels, datasets: [{ label: 'kgCO2e', data: chartDataValues, 
+                    backgroundColor: ['rgba(54, 162, 235, 0.6)','rgba(255, 99, 132, 0.6)','rgba(75, 192, 192, 0.6)','rgba(255, 206, 86, 0.6)','rgba(153, 102, 255, 0.6)','rgba(255, 159, 64, 0.6)','rgba(199, 199, 199, 0.6)'],
+                    borderColor: ['rgba(54, 162, 235, 1)','rgba(255, 99, 132, 1)','rgba(75, 192, 192, 1)','rgba(255, 206, 86, 1)','rgba(153, 102, 255, 1)','rgba(255, 159, 64, 1)','rgba(199, 199, 199, 1)'],
+                    borderWidth: 1 }] },
+                    options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true, title: { display: true, text: 'kgCO2e' }}, x: { title: { display: true, text: 'Emission Section' }}}, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} kgCO2e` }}} }
+                });
+            } else {
+                 if (emissionsChartInstance) { emissionsChartInstance.destroy(); emissionsChartInstance = null; }
+                 emissionsChartCanvas.getContext('2d').clearRect(0,0,emissionsChartCanvas.width, emissionsChartCanvas.height);
+            }
+
+            rawApiResponseElement.textContent = JSON.stringify(data, null, 2);
+            rawApiResponseElement.classList.add('hidden');
+            toggleRawJsonButton.textContent = 'Show Raw JSON';
+            showView('results');
+        }
+        
+        // --- Event Listeners ---
+        calculatorForm.addEventListener('submit', handleFormSubmit);
+        addCountryDetailButton.addEventListener('click', () => addCountryDetailBlock());
+        addInterventionButton.addEventListener('click', () => addInterventionBlock());
+        addTestLabKitButton.addEventListener('click', () => addTestLabKitBlock());
+        addOtherParticipantButton.addEventListener('click', () => addOtherParticipantBlock());
+        backToFormButton.addEventListener('click', () => { loadFormFromLocalStorage(); showView('form'); });
+        toggleRawJsonButton.addEventListener('click', () => {
+            rawApiResponseElement.classList.toggle('hidden');
+            toggleRawJsonButton.textContent = rawApiResponseElement.classList.contains('hidden') ? 'Show Raw JSON' : 'Hide Raw JSON';
+        });
+
+        // Initial Load
+        loadFormFromLocalStorage();
+        showView('form'); 
+    </script>
+</body>
+</html>
