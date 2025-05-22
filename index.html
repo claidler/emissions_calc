@@ -74,7 +74,6 @@
             box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06);
             position: relative; /* Ensures canvas stays within bounds */
             height: 400px; /* Fixed height for the chart container */
-            /* margin-bottom is handled by Tailwind class 'mb-6' on the div itself */
         }
 
     </style>
@@ -182,7 +181,13 @@
             <div id="resultsContent" class="space-y-6"></div>
             <div id="resultsLoadingIndicator" class="loading-indicator">Calculating...</div>
             <pre id="rawApiResponse" class="mt-8 bg-gray-800 text-white p-4 rounded-md text-xs overflow-x-auto hidden"></pre>
-            <button id="toggleRawJsonButton" class="btn btn-sm btn-secondary mt-4">Show Raw JSON</button>
+            <div class="mt-6 flex space-x-3">
+                <button id="toggleRawJsonButton" class="btn btn-sm btn-secondary">Show Raw JSON</button>
+                <button id="exportCsvButton" class="btn btn-sm btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Export to CSV
+                </button>
+            </div>
         </div>
     </div>
 
@@ -200,6 +205,7 @@
         const rawApiResponseElement = document.getElementById('rawApiResponse');
         const toggleRawJsonButton = document.getElementById('toggleRawJsonButton');
         const emissionsChartCanvas = document.getElementById('emissionsChart');
+        const exportCsvButton = document.getElementById('exportCsvButton'); // CSV Export Button
 
         const API_ENDPOINT = 'https://clinicaltrialcarbon.org/api/Calculator/CalculateResults';
         const LOCAL_STORAGE_KEY_DATA = 'clinicalTrialFormData_v2';
@@ -208,6 +214,7 @@
         let emissionsChartInstance = null;
         let appData = {}; 
         let sectionCompletionStatus = {}; 
+        let latestApiResult = null; // To store the latest API result for CSV export
 
         // --- Helper Functions (Defined First) ---
         function createResultItem(label, value, unit = '', additionalClasses = '') {
@@ -618,24 +625,11 @@
                 }))
             };
             
-            // Conditionally include arrays only if they have items, if API prefers absence over empty arrays
-            // if (payload.countryDetails.length === 0) delete payload.countryDetails;
-            // if (payload.interventions.length === 0) delete payload.interventions;
-            // if (payload.testLabKit.length === 0) delete payload.testLabKit;
-            // if (payload.otherParticipants.length === 0) delete payload.otherParticipants;
-            
             return payload;
         }
 
         // --- Calculate Results ---
         async function handleCalculateResults() {
-            // Removed the check for allRequiredComplete
-            // const allRequiredComplete = sections.filter(s => s.required).every(s => sectionCompletionStatus[s.id]);
-            // if (!allRequiredComplete) {
-            //     alert("Please complete all required sections (marked with an incomplete icon) before calculating results.");
-            //     return;
-            // }
-
             resultsLoadingIndicator.style.display = 'block';
             resultsContent.innerHTML = '';
             if (emissionsChartInstance) { emissionsChartInstance.destroy(); emissionsChartInstance = null;}
@@ -665,10 +659,12 @@
                 }
 
                 const result = await response.json();
+                latestApiResult = result; // Store for CSV export
                 displayApiResults(result); 
             } catch (error) {
                 console.error('Error during API request or processing:', error);
                 resultsContent.innerHTML = `<div class="result-card text-red-600"><h3 class="text-red-700">Error</h3><p>Failed to calculate results. Details: ${error.message || 'Unknown error'}</p><p>Please check the browser console (Network tab and Console tab) for more information.</p></div>`;
+                latestApiResult = null; // Clear on error
             } finally {
                 resultsLoadingIndicator.style.display = 'none';
                 showPage('resultsPage');
@@ -767,10 +763,118 @@
             toggleRawJsonButton.textContent = 'Show Raw JSON';
         }
 
+        // --- CSV Export Function ---
+        function exportResultsToCsv() {
+            if (!latestApiResult) {
+                alert("No results available to export. Please calculate results first.");
+                return;
+            }
+
+            const data = latestApiResult;
+            let csvContent = "data:text/csv;charset=utf-8,";
+
+            // Helper to sanitize CSV data
+            const sanitize = (value) => {
+                if (value === null || typeof value === 'undefined') return "";
+                let strValue = String(value);
+                if (strValue.includes(",")) strValue = `"${strValue}"`; // Enclose in quotes if contains comma
+                return strValue;
+            };
+            
+            // Section Emission Breakdown
+            csvContent += "Section Emission Breakdown\r\n";
+            csvContent += "Section Name,Section Number,Percentage,Total kgCO2e,Total kgCO2e (Scope 3)\r\n";
+            if (data.sectionEmissionBreakdown && data.sectionEmissionBreakdown.length > 0) {
+                data.sectionEmissionBreakdown.forEach(row => {
+                    csvContent += [
+                        sanitize(row.sectionName),
+                        sanitize(row.sectionNumber),
+                        sanitize(row.percentage),
+                        sanitize(row.totalKgCO2e),
+                        sanitize(row.totalKgCO2eSp3)
+                    ].join(",") + "\r\n";
+                });
+            }
+            csvContent += "\r\n"; // Add a blank line
+
+            // Overall Totals
+            csvContent += "Overall Trial Totals\r\n";
+            csvContent += "Metric,Value\r\n";
+            csvContent += `Total kgCO2e,${sanitize(data.totalKgCO2e)}\r\n`;
+            csvContent += `Total kgCO2e (Scope 3),${sanitize(data.totalKgCO2eSp3)}\r\n`;
+            csvContent += `Participant kgCO2e,${sanitize(data.participantKgCO2e)}\r\n`;
+            csvContent += `Participant kgCO2e (Scope 3),${sanitize(data.participantKgCO2eSp3)}\r\n`;
+            csvContent += "\r\n";
+
+            // Country Emission Breakdown
+            csvContent += "Country Emission Breakdown\r\n";
+            csvContent += "Country Code,Total kgCO2e,Total kgCO2e (Scope 3)\r\n";
+            if (data.countryEmissionBreakdown && data.countryEmissionBreakdown.length > 0) {
+                data.countryEmissionBreakdown.forEach(row => {
+                    csvContent += [
+                        sanitize(row.countryCode),
+                        sanitize(row.totalKgCO2e),
+                        sanitize(row.totalKgCO2eSp3)
+                    ].join(",") + "\r\n";
+                });
+            }
+            csvContent += "\r\n";
+            
+            // Intervention Results (Example - adjust based on desired columns)
+            csvContent += "Intervention Results\r\n";
+            csvContent += "ID,Manufacture kgCO2e,Supply kgCO2e,End of Life kgCO2e,Manufacture kgCO2e (Scope 3),Supply kgCO2e (Scope 3),End of Life kgCO2e (Scope 3)\r\n";
+            if (data.interventionResults && data.interventionResults.length > 0) {
+                data.interventionResults.forEach(row => {
+                    csvContent += [
+                        sanitize(row.id), sanitize(row.manufacture), sanitize(row.supply), sanitize(row.endOfLife),
+                        sanitize(row.manufactureSp3), sanitize(row.supplySp3), sanitize(row.endOfLifeSp3)
+                    ].join(",") + "\r\n";
+                });
+            }
+            csvContent += "\r\n";
+
+            // Test Lab Kit Results (Example)
+            csvContent += "Test Lab Kit Results\r\n";
+            csvContent += "ID,Manufacture kgCO2e,Supply kgCO2e,End of Life kgCO2e,Manufacture kgCO2e (Scope 3),Supply kgCO2e (Scope 3),End of Life kgCO2e (Scope 3)\r\n";
+             if (data.testLabKit && data.testLabKit.length > 0) { // Note: API response has 'testLabKit' not 'testLabKitResults'
+                data.testLabKit.forEach(row => {
+                    csvContent += [
+                        sanitize(row.id), sanitize(row.manufacture), sanitize(row.supply), sanitize(row.endOfLife),
+                        sanitize(row.manufactureSp3), sanitize(row.supplySp3), sanitize(row.endOfLifeSp3)
+                    ].join(",") + "\r\n";
+                });
+            }
+            csvContent += "\r\n";
+
+            // Other Participant Devices Results (Example)
+            csvContent += "Other Participant Devices Results\r\n";
+            csvContent += "ID,Usage kgCO2e,Manufacture kgCO2e,Supply kgCO2e,End of Life kgCO2e,Usage kgCO2e (Scope 3),Manufacture kgCO2e (Scope 3),Supply kgCO2e (Scope 3),End of Life kgCO2e (Scope 3)\r\n";
+            if (data.otherParticipants && data.otherParticipants.length > 0) { // Note: API response has 'otherParticipants'
+                data.otherParticipants.forEach(row => {
+                    csvContent += [
+                        sanitize(row.id), sanitize(row.usage), sanitize(row.manufacture), sanitize(row.supply), sanitize(row.endOfLife),
+                        sanitize(row.usageSp3), sanitize(row.manufactureSp3), sanitize(row.supplySp3), sanitize(row.endOfLifeSp3)
+                    ].join(",") + "\r\n";
+                });
+            }
+            csvContent += "\r\n";
+
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "clinical_trial_carbon_results.csv");
+            document.body.appendChild(link); 
+            link.click();
+            document.body.removeChild(link);
+        }
+
+
         // --- Event Listeners ---
         newAssessmentButton.addEventListener('click', resetAssessment);
         calculateResultsButtonOverview.addEventListener('click', handleCalculateResults);
         backToOverviewButton.addEventListener('click', () => showPage('overviewPage'));
+        exportCsvButton.addEventListener('click', exportResultsToCsv); // Listener for new button
         
         toggleRawJsonButton.addEventListener('click', () => {
             rawApiResponseElement.classList.toggle('hidden');
